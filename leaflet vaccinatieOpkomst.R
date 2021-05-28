@@ -64,6 +64,7 @@ gm_sf$GM_CODE <- to_number(gm_sf$GM_CODE)
 
 # dit bestand bevat pc6 incl buurt-, wijk- en gemeentcode. Deze data koppelen
 # we later aan de bu, wk en gm polygoon data. 
+# https://www.cbs.nl/nl-nl/maatwerk/2020/39/buurt-wijk-en-gemeente-2020-voor-postcode-huisnummer
 dfpchn <- fread(file.path(path_data, "pc6hnr20200801_gwb.csv"))
 #dfpchn <- dfpchn[, c("PC6", "Buurt2020", "Wijk2020", "Gemeente2020")]
 dfpchn <- unique(dfpchn)
