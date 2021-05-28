@@ -6,3 +6,4 @@ Dit project is een samenwerking tussen de Brabantse GGD'en.
 Vragen en/of opmerkingen kun je richten aan Leonard Vanbrabant (l.vanbrabant@ggdwestbrabant.nl) en Arne Meeldijk (a.meeldijk@ggdbzo.nl). 
 
  
+![Screenshot](https://github.com/LeonardV/VaccinatieOpkomst/blob/main/wb_pc4_kaart.png)
