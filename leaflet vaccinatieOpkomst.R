@@ -1,17 +1,18 @@
 # auteur: Leonard Vanbrabant (GGD WB) en Arne Meeldijk (GGD BZO)
 # datum aangemaakt: 10-05-2021
-# datum laatst gewijzigd: 25-05-2021 door LV
-
+# datum laatst gewijzigd: 11-06-2021 door LV
 
 ## door gebruiker aan te passen
-# ggd regio
-ggd_regio <- "GGD West-Brabant"
 
 # selecteer de gemeentenamen uit je eigen regio
 GM_GGD_regio <- c("Alphen-Chaam", "Altena", "Baarle-Nassau", "Bergen op Zoom",
                   "Breda", "Drimmelen", "Etten-Leur", "Geertruidenberg",
                   "Halderberge", "Moerdijk", "Oosterhout", "Roosendaal",
                   "Rucphen", "Steenbergen", "Woensdrecht", "Zundert")
+
+# laatst beschikbare datum vaccinatiedata. Haal je nieuwe data op obv de
+# get_vaccinatieData() dan gebruik je de data van vandaag.
+vac_datum <- "2021-06-09"
 
 
 # laad paketten
@@ -26,7 +27,7 @@ library(htmlwidgets)   # save leaflet kaart
 
 ## source files
 # haal de laatste vaccinatie data uit coronit
-source("get_vaccinatieData.R")
+#source("get_vaccinatieData.R")
 
 
 # helper functie: verwijder letters van string en maak er een numerieke variabele van.
@@ -35,9 +36,10 @@ to_number <- function(codes) {
 }
 
 # set paths: aanpassing naar eigen lokaties
-path_shape <- "C:/Users/l.vanbrabant/stack/ShapeFiles" # e.g., .shp of .gpkg
-path_data  <- "data" 
-
+#path_shape <- "/home/leonardv/stack/ShapeFiles"
+path_shape  <- "C:/Users/l.vanbrabant/stack/ShapeFiles" # e.g., .shp of .gpkg
+path_data   <- "data" 
+path_result <- "resultaten" 
 
 ## laad gebiedspolygonen: dit zijn polygonen van heel NL!
 # PC6
@@ -84,13 +86,29 @@ dfpchn_gmnaam <- subset(dfpchn_gmnaam, GM_NAAM %in% GM_GGD_regio)
 unique(dfpchn_gmnaam$GM_NAAM)
 
 ## vaccinatie data inladen
-vac <- fread(file.path(path_data, paste0(Sys.Date(), "_vaccinaties.csv")))
+vac <- fread(file.path(path_data, paste0(vac_datum, "_vaccinaties.csv")))
 # opschonen data
-vac_df <- subset(vac, !is.na(nm_batchnummer) & !is.na(dt_vaccinatie) &
-                   vaccinatiestatus == "Vaccinatie gezet" &
-                   ggd_regio == ggd_regio & nr_vaccinatieronde == 1)
-# verwijder laatste dubbele cases op basis van bsn
+# vac_df <- subset(vac, !is.na(nm_batchnummer) & !is.na(dt_vaccinatie) &
+#                       vaccinatiestatus == "Vaccinatie gezet" &
+#                       ggd_regio == "GGD West-Brabant" & nr_vaccinatieronde == 1)
+
+## nu worden ook de geplande afsraken meegenomen. Deze data bevat wel meer ruis.
+
+## enkel 1ste vaccinaties eruit filteren!
+vac_df <- subset(vac, ((status_afspraak == "GEPLAND" & status_deelname == "GEPLAND") | 
+                         vaccinatiestatus == "Vaccinatie gezet") &
+                   (is.na(nr_vaccinatieronde) | nr_vaccinatieronde == 1) &
+                 ggd_regio == "GGD West-Brabant")
+
+# verwijder dubbele bsn, zo houden we iedereen over die 1 vaccinatie heeft gehad
+# of ingepland staat. De tweede afspraak is dus verwijderd. 
 vac_df <- vac_df[!duplicated(vac_df$bsn), ]
+
+## checks
+# vaccinatie status is wel gezet: batchnr bestaat
+vac_df[vac_df$status_afspraak == "VERVALLEN", ]
+vac_df[vac_df$status_deelname == "GEANNULEERD", ]
+
 vac_df <- vac_df[ , c("postcode", "huisnummer")]
 names(vac_df) <- c("PC6", "Huisnummer")
 
@@ -98,8 +116,10 @@ names(vac_df) <- c("PC6", "Huisnummer")
 buwkgm_vac_df <- merge(vac_df, dfpchn_gmnaam, by = c("PC6", "Huisnummer"), all.x = TRUE)
 
 ## de postcodes zijn niet altijd correct ingevuld of afwezig, dit levert problemen
-## op bij het koppelen. 
-sum(is.na(buwkgm_vac_df$GM_NAAM))
+## op bij het koppelen. Dit aantal is gelukkig laag
+# percentage
+sum(is.na(buwkgm_vac_df$GM_NAAM)) / nrow(buwkgm_vac_df) * 100
+
 
 ## aggregeer aantal vaccinaties naar gebied
 pc6_vac <- aggregate(rep(1, nrow(buwkgm_vac_df)), by = list(buwkgm_vac_df$PC6), sum)
@@ -130,7 +150,7 @@ gm_sf <- subset(gm_sf, GM_NAAM %in% GM_GGD_regio)
 gm_sf <- gm_sf[ , c("GM_CODE", "GM_NAAM")]
 
 
-# voeg gemeente namen toe aan polygoon data pc4 en pc6
+# voeg gemeentennamen toe aan polygoon data pc4 en pc6
 dfpc6hn_gmnaam_sub <- unique(dfpchn_gmnaam[, c("PC6", "GM_NAAM")])
 pc6_sf <- merge(pc6_sf, dfpc6hn_gmnaam_sub, by = "PC6", all.x = TRUE)
 dfpc4hn_gmnaam_sub <- unique(dfpchn_gmnaam[, c("PC4", "GM_NAAM")])
@@ -153,17 +173,19 @@ wk_sf_vac  <- st_transform(wk_sf_vac, 4326)
 gm_sf_vac  <- st_transform(gm_sf_vac, 4326)
 
 
+
 # dit zijn alle gezondheidsinstellingen in NL met een woonfunctie.
 # bron: BAG
-BAG <- fread(file.path(path_data, "gezondheidsInstellingen_met_woonfunctie.csv"))
+BAG <- st_read(file.path(path_data, "gezondheidsInstellingen_met_woonfunctie.gpkg"))
 # selecteer enkel panden die in gebruik zijn
-BAG <- BAG[BAG$pandstatus %in% c("Pand in gebruik", "Pand in gebruik (niet ingemeten)"), ]
-#table(BAG$pandstatus)
+BAG <- subset(BAG, status %in% c("Verblijfsobject in gebruik", 
+                                 "Verblijfsobject in gebruik (niet ingemeten)"))
+#
 # Aggregeren aantal zorginstellingen naar PC6 
-BAG_pc6 <- aggregate(rep(1, nrow(BAG)), by = list(BAG$postcode), sum)
-  names(BAG_pc6) <- c("PC6", "A_ZORG")
+#BAG_pc6 <- aggregate(rep(1, nrow(BAG)), by = list(BAG$postcode), sum)
+#names(BAG_pc6) <- c("PC6", "A_ZORG")
 # selecteer enkel de postcodes uit de eigen regio
-BAG_pc6 <- subset(BAG_pc6, PC6 %in% dfpc6hn_gmnaam_sub$PC6)
+BAG <- subset(BAG, postcode %in% dfpc6hn_gmnaam_sub$PC6)
 
 
 ## kenmerken op pc6 niveau: let op dit is data uit 2017! Geen nieuwere data beschikbaar
@@ -193,6 +215,13 @@ cbs_pc6_df$INW_1524[is.na(cbs_pc6_df$INW_1524)] <- 0L
 
 # kerncijfers op pc4 niveau
 cbs_pc4_df <- fread(file.path(path_data, "cbs_pc4_2020_v1.csv"))
+# tmp_pc4 <- data.frame(INW = cbs_pc4_df$INWONER, "014" = cbs_pc4_df$INW_014, 
+#                       "1524" = cbs_pc4_df$INW_1524, "2544" = cbs_pc4_df$INW_2544,
+#                       "4564" = cbs_pc4_df$INW_4564, 
+#                       "65" = cbs_pc4_df$INW_65PL)
+# tmp_pc4$T_sub <- rowSums(tmp_pc4[, -1], na.rm = TRUE)
+# tmp_pc4$diff <- tmp_pc4$INW - tmp_pc4$T_sub
+# tmp_pc4
 cbs_pc4_df$INW_65PL[is.na(cbs_pc4_df$INW_65PL)] <- 0L
 cbs_pc4_df$INW_4564[is.na(cbs_pc4_df$INW_4564)] <- 0L
 cbs_pc4_df$INW_2544[is.na(cbs_pc4_df$INW_2544)] <- 0L
@@ -295,17 +324,17 @@ points(y = pc4_sf_vac_kwb$P_VAC[!idx2], x = pc4_sf_vac_kwb$P_65PL[!idx2],
 # pc6
 pc6_xyplot <- ggplot(data = pc6_sf_vac_kwb, aes(x = P_65PL, y = P_VAC)) +
   geom_point(color = 'black')  +
-  labs(title = '65+ers en gevaccineerden per buurt') +
+  labs(title = '65+ers en gevaccineerden per pc6') +
   scale_y_continuous("percentage gevaccineerd") +
-  scale_x_continuous("percentage 65+")
+  scale_x_continuous("percentage 65+") + geom_smooth(method='lmrob')
 pc6_xyplot
 
 # pc4
 pc4_xyplot <- ggplot(data = pc4_sf_vac_kwb, aes(x = P_65PL, y = P_VAC)) +
   geom_point(color = 'black')  +
-  labs(title = '65+ers en gevaccineerden per buurt') +
+  labs(title = '65+ers en gevaccineerden per pc4') +
   scale_y_continuous("percentage gevaccineerd") +
-  scale_x_continuous("percentage 65+")
+  scale_x_continuous("percentage 65+") + geom_smooth(method='lmrob')
 pc4_xyplot
 
 # buurt
@@ -313,38 +342,67 @@ bu_xyplot <- ggplot(data = bu_sf_vac_kwb, aes(x = P_65PL, y = P_VAC)) +
   geom_point(color = 'black')  +
   labs(title = '65+ers en gevaccineerden per buurt') +
   scale_y_continuous("percentage gevaccineerd") +
-  scale_x_continuous("percentage 65+")
+  scale_x_continuous("percentage 65+") + geom_smooth(method='lmrob')
 bu_xyplot
 
 
 # wijk
 wk_xyplot <- ggplot(data = wk_sf_vac_kwb, aes(x = P_65PL, y = P_VAC)) +
   geom_point(color = 'black')  +
-  labs(title = '65+ers en gevaccineerden per buurt') +
+  labs(title = '65+ers en gevaccineerden per wijk') +
   scale_y_continuous("percentage gevaccineerd") +
-  scale_x_continuous("percentage 65+")
+  scale_x_continuous("percentage 65+") + geom_smooth(method='lmrob')
 wk_xyplot
 
 # gemeente
 gm_xyplot <- ggplot(data = gm_sf_vac_kwb, aes(x = P_65PL, y = P_VAC)) +
   geom_point(color = 'black')  +
-  labs(title = '65+ers en gevaccineerden per buurt') +
+  labs(title = '65+ers en gevaccineerden per gemeente') +
   scale_y_continuous("percentage gevaccineerd") +
-  scale_x_continuous("percentage 65+")
+  scale_x_continuous("percentage 65+") + geom_smooth(method='lmrob')
 gm_xyplot
 
 
 ## Hier gebeurt de magic
 ## predictie maken op basis van leeftijd. 
+
+## TODO
+
 # pc6
 tmp <- pc6_sf_vac_kwb[, c("P_VAC", "P_65PL", "P_4564", "P_2544", "P_1524")]
 tmp$geometry <- NULL
 cor(tmp, use = "pairwise.complete.obs")
 
-fit1_pc6 <- lmrob(P_VAC ~ P_65PL + P_4564 + P_2544 + P_1524,  
-                  data = pc6_sf_vac_kwb, method = "MM", setting = "KS2014")
-summary(fit1_pc6)$r.squared
-pc6_sf_vac_kwb$pred <- predict(object = fit1_pc6, pc6_sf_vac_kwb)
+## hier is een linear regressiemodel niet geschikt ivm het voorkomen van 
+## datapunten tegen de boundaries (0 - 100)
+## Beter om bv. een beta regressie of een logistische regressie te gebruiken
+
+## fit null- model
+# fit0_pc6 <- glm(A_VAC/INWONER ~ 1,  
+#                 data = pc6_sf_vac_kwb, 
+#                 weights = INWONER, family = "binomial")
+# 
+# fit1_pc6 <- glmrob(A_VAC/INWONER ~ P_65PL + P_4564 + P_2544 + P_1524,  
+#                    data = pc6_sf_vac_kwb, method = "Mqle",
+#                    weights = INWONER, family = "binomial")
+# 
+# fit2_pc6 <- glm(A_VAC/INWONER ~ P_65PL + P_4564 + P_2544 + P_1524 + P_ZORG,  
+#                 data = pc6_sf_vac_kwb, 
+#                 weights = INWONER, family = "binomial")
+# 
+# summary(fit2_pc6)
+
+
+# MCfadden's pseudo R-square
+# werkt niet met glmrob
+#1-logLik(fit2_pc6)/logLik(fit0_pc6)
+#exp(coef(fit1_pc6))
+
+
+#summary(fit1_pc6)$r.squared
+# use resonse scale
+#pc6_sf_vac_kwb$pred <- predict(object = fit1_pc6, pc6_sf_vac_kwb, type = "response")
+
 
 # pc4
 tmp <- pc4_sf_vac_kwb[, c("P_VAC", "P_65PL", "P_4564", "P_2544", "P_1524")]
@@ -353,6 +411,7 @@ cor(tmp, use = "pairwise.complete.obs")
 
 fit1_pc4 <- lmrob(P_VAC ~ P_65PL + P_4564 + P_2544 + P_1524,  
                   data = pc4_sf_vac_kwb, method = "MM", setting = "KS2014")
+
 summary(fit1_pc4)$r.squared
 pc4_sf_vac_kwb$pred <- predict(object = fit1_pc4, pc4_sf_vac_kwb)
 
@@ -382,7 +441,7 @@ tmp <- gm_sf_vac_kwb[, c("P_65PL", "P_4564", "P_2544", "P_1524")]
 tmp$geometry <- NULL
 cor(tmp, use = "pairwise.complete.obs")
 
-fit1_gm <- lmrob(P_VAC ~ P_65PL + P_4564 + P_2544 + P_1524,
+fit1_gm <- lmrob(P_VAC ~ P_65PL + P_4564 + P_2544, #+ P_1524,
                  data = gm_sf_vac_kwb, method = "MM", setting = "KS2014")
 summary(fit1_gm)$r.squared
 gm_sf_vac_kwb$pred <- predict(object = fit1_gm, gm_sf_vac_kwb)
@@ -619,9 +678,10 @@ kaart <- leaflet() %>%
   #           title = "Verschil voorspeld en \n werkelijk gevaccineerden", 
   #           na.label = "Geen informatie") %>%
   addLayersControl(
-    baseGroups = c("PC6", 
+    baseGroups = c(#"PC6", 
                    "PC4", "Buurt", "Wijk", "Gemeente"),
     options    = layersControlOptions(collapsed = FALSE))
 
 
-saveWidget(kaart, file = file.path(path_data, "kaart_vaccinatie_gebieden.html"), selfcontained = FALSE)
+saveWidget(kaart, file = file.path(path_result, paste0(Sys.Date(), "_wb_kaart_vaccinatie_opkomst_gebieden.html")), 
+           selfcontained = TRUE)
