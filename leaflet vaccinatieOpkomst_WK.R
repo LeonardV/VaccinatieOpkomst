@@ -12,7 +12,7 @@ GM_GGD_regio <- c("Alphen-Chaam", "Altena", "Baarle-Nassau", "Bergen op Zoom",
 
 # laatst beschikbare datum vaccinatiedata. Haal je nieuwe data op obv de
 # get_vaccinatieData() dan gebruik je de data van vandaag.
-vac_datum <- "2021-06-09"
+vac_datum <- "2021-06-14"
 
 
 # laad paketten
@@ -411,6 +411,11 @@ labels_wk_65PL <-
   lapply(htmltools::HTML)
 
 
+centroids <- st_centroid(wk_sf_vac_kwb$geometry)
+XY <- as.data.frame(st_coordinates(centroids))
+wk_sf_vac_kwb$X <- XY$X
+wk_sf_vac_kwb$Y <- XY$Y
+
 
 kaart <- leaflet() %>% 
   #setView(zoom = zoom) %>% 
@@ -476,6 +481,12 @@ kaart <- leaflet() %>%
               highlightOptions = highlightOptions(color = "black", weight = 3,
                                                   bringToFront = TRUE),
               options = pathOptions(pane = "ames_polygons")) %>%
+  addLabelOnlyMarkers(data  = wk_sf_vac_kwb,
+                      lng   = ~X, 
+                      lat   = ~Y, 
+                      label = ~diffLM_inv ,
+                      labelOptions = labelOptions(noHide = TRUE, direction = 'top', 
+                                                  textOnly = TRUE)) %>%
   addMarkers(data = BAG, group = "Gezondheidsinstelling met woonfunctie",
              clusterOptions = markerClusterOptions()) %>%
   addLayersControl(
@@ -485,5 +496,5 @@ kaart <- leaflet() %>%
     options    = layersControlOptions(collapsed = FALSE))
 
 
-saveWidget(kaart, file = file.path(path_result, paste0(Sys.Date(), "_wb_kaart_vaccinatie_opkomst_wijk.html")), 
-           selfcontained = TRUE)
+# saveWidget(kaart, file = file.path(path_result, paste0(Sys.Date(), "_wb_kaart_vaccinatie_opkomst_wijk.html")), 
+#            selfcontained = TRUE)
