@@ -15,6 +15,8 @@ path_data  <- "data"
 
 # aanpassen naar eigen locatie
 path_to_Renviron_file <- "C:/Users/l.vanbrabant/Documents/.Renviron"
+#path_to_Renviron_file <- "/home/leonardv"
+
 readRenviron(path_to_Renviron_file) 
 
 con <- DBI::dbConnect(RPostgres::Postgres(),
@@ -25,8 +27,13 @@ con <- DBI::dbConnect(RPostgres::Postgres(),
                       port     = Sys.getenv("Port")
 )
 
+
+#dbListTables(con) 
+
 # get vaccinatie data
-vac <- DBI::dbGetQuery(con, "SELECT nm_batchnummer, dt_vaccinatie, vaccinatiestatus,
+vac <- DBI::dbGetQuery(con, "SELECT nm_batchnummer, dt_vaccinatie, dt_start_afspraak,
+                             vaccinatiestatus, nr_patient, geboortedatum, 
+                             status_afspraak, status_deelname,   
                              ggd_regio, nr_vaccinatieronde, bsn, postcode, huisnummer
                              FROM vaccinatie")
 
