@@ -14,7 +14,7 @@ GM_GGD_regio <- c("Alphen-Chaam", "Altena", "Baarle-Nassau", "Bergen op Zoom",
 
 # laatst beschikbare datum vaccinatiedata. Haal je nieuwe data op obv de
 # get_vaccinatieData() dan gebruik je de data van vandaag.
-vac_datum <- "2021-06-29"
+vac_datum <- "2021-07-06"
 
 
 # laad paketten
@@ -30,8 +30,7 @@ library(RColorBrewer)  # voor mooie kleurtjes
 ## source files
 # haal de laatste vaccinatie data uit coronit
 #source("get_vaccinatieData.R")
-
-# check of de data goed gevuld zijn
+# # check of de data goed gevuld zijn
 #tmp <- vac
 #tmp$datum <- as.Date(tmp$dt_vaccinatie)
 #aggregate(rep(1, nrow(tmp)), by = list(tmp$datum), sum)
@@ -51,11 +50,11 @@ path_result   <- "resultaten"
 
 
 # bronbestand: https://www.cbs.nl/nl-nl/dossier/nederland-regionaal/geografische-data/wijk-en-buurtkaart-2020
-st_layers(file.path(path_shape, "2020/WijkBuurtkaart_2020_v1.gpkg"))
-bu_sf <- read_sf(file.path(path_shape, "2020/WijkBuurtkaart_2020_v1.gpkg"), layer = "cbs_buurten_2020")
-wk_sf <- read_sf(file.path(path_shape, "2020/WijkBuurtkaart_2020_v1.gpkg"), layer = "cbs_wijken_2020")
-gm_sf <- read_sf(file.path(path_shape, "2020/WijkBuurtkaart_2020_v1.gpkg"), layer = "gemeenten2020")
-
+#st_layers(file.path(path_shape, "2020/WijkBuurtkaart_2020_v1.gpkg"))
+bu_sf  <- read_sf(file.path(path_shape, "2020/WijkBuurtkaart_2020_v1.gpkg"), layer = "cbs_buurten_2020")
+wk_sf  <- read_sf(file.path(path_shape, "2020/WijkBuurtkaart_2020_v1.gpkg"), layer = "cbs_wijken_2020")
+gm_sf  <- read_sf(file.path(path_shape, "2020/WijkBuurtkaart_2020_v1.gpkg"), layer = "gemeenten2020")
+pc4_sf <- read_sf(file.path(path_shape, "2020/pc4/CBS_pc4_2020_v1.shp"))
 
 
 # -------------------------------------------------------------------------
@@ -64,12 +63,12 @@ gm_sf <- read_sf(file.path(path_shape, "2020/WijkBuurtkaart_2020_v1.gpkg"), laye
 # tilburg en Oisterwijk respectievelijk opgeteld worden.
 wk_code_biezen <- to_number(wk_sf[wk_sf$wijknaam %like% "Biezen", ]$wijkcode)
 # aantal inwoners
-a_inw_biezen      <- wk_sf[wk_sf$wijknaam %like% "Biezen", ]$aantal_inwoners
+a_inw_biezen <- wk_sf[wk_sf$wijknaam %like% "Biezen", ]$aantal_inwoners
 # aantal 0-15 jarigen
 a_inw_biezen_0014 <- floor(a_inw_biezen * wk_sf[wk_sf$wijknaam %like% "Biezen", ]$percentage_personen_0_tot_15_jaar / 100)
 
 wk_code_haaren <- to_number(wk_sf[wk_sf$wijknaam %like% "Haaren", ]$wijkcode)
-a_inw_haaren      <- wk_sf[wk_sf$wijknaam %like% "Haaren", ]$aantal_inwoners
+a_inw_haaren <- wk_sf[wk_sf$wijknaam %like% "Haaren", ]$aantal_inwoners
 a_inw_haaren_0014 <- floor(a_inw_haaren * wk_sf[wk_sf$wijknaam %like% "Haaren", ]$percentage_personen_0_tot_15_jaar / 100)
 # -------------------------------------------------------------------------
 
@@ -81,6 +80,7 @@ bu_sf$GM_CODE <- to_number(bu_sf$gemeentecode)
 wk_sf$WK_CODE <- to_number(wk_sf$wijkcode)
 wk_sf$GM_CODE <- to_number(wk_sf$gemeentecode)
 gm_sf$GM_CODE <- to_number(gm_sf$gemeentecode)
+pc4_sf$PC4    <- to_number(pc4_sf$PC4)
 
 # rename naam
 bu_sf$BU_NAAM <- bu_sf$buurtnaam
@@ -89,6 +89,24 @@ bu_sf$GM_NAAM <- bu_sf$gemeentenaam
 wk_sf$WK_NAAM <- wk_sf$wijknaam
 wk_sf$GM_NAAM <- wk_sf$gemeentenaam
 gm_sf$GM_NAAM <- gm_sf$gemeentenaam
+
+# dit bestand bevat pc6 incl buurt-, wijk- en gemeentcode. Deze data koppelen
+# we later aan de bu, wk en gm polygoon data. 
+# bronbestand: https://www.cbs.nl/nl-nl/maatwerk/2020/39/buurt-wijk-en-gemeente-2020-voor-postcode-huisnummer
+dfpchn <- fread(file.path(path_shape, "pc6hnr20200801_gwb.csv"))
+dfpchn <- unique(dfpchn)
+dfpchn$PC4 <- to_number(dfpchn$PC6)
+  names(dfpchn) <- c("PC6", "Huisnummer", "BU_CODE", "WK_CODE", "GM_CODE", "PC4")
+
+# data met de gemeente code en gemeente naam
+gm <- fread(file.path(path_data, "gem2020.csv"))
+names(gm) <- c("GM_CODE", "GM_NAAM")
+
+# koppel gemeente naam aan pc6
+dfpchn_gmnaam <- merge(dfpchn, gm, by = "GM_CODE", all.x = TRUE)
+
+dfpc6hn_gmnaam_sub <- unique(dfpchn_gmnaam[, c("PC6", "GM_NAAM")])
+dfpc6hn_gmnaam_sub <- subset(dfpc6hn_gmnaam_sub, GM_NAAM %in% GM_GGD_regio)
 
 # subset wijken ggd regio 
 bu_sf <- subset(bu_sf, GM_NAAM %in% GM_GGD_regio)
@@ -100,24 +118,15 @@ wk_sf <- wk_sf[ , c("WK_CODE", "GM_CODE", "WK_NAAM", "GM_NAAM")]
 gm_sf <- subset(gm_sf, GM_NAAM %in% GM_GGD_regio)
 gm_sf <- gm_sf[ , c("GM_CODE", "GM_NAAM")]
 
-
-# dit bestand bevat pc6 incl buurt-, wijk- en gemeentcode. Deze data koppelen
-# we later aan de bu, wk en gm polygoon data. 
-# bronbestand: https://www.cbs.nl/nl-nl/maatwerk/2020/39/buurt-wijk-en-gemeente-2020-voor-postcode-huisnummer
-dfpchn <- fread(file.path(path_shape, "pc6hnr20200801_gwb.csv"))
-dfpchn <- unique(dfpchn)
-dfpchn$PC4 <- to_number(dfpchn$PC6)
-names(dfpchn) <- c("PC6", "Huisnummer", "BU_CODE", "WK_CODE", "GM_CODE", "PC4")
-
-# data met de gemeente code en gemeente naam
-gm <- fread(file.path(path_data, "gem2020.csv"))
-names(gm) <- c("GM_CODE", "GM_NAAM")
-
-# koppel gemeente naam aan pc6
-dfpchn_gmnaam <- merge(dfpchn, gm, by = "GM_CODE", all.x = TRUE)
-
-dfpc6hn_gmnaam_sub <- unique(dfpchn_gmnaam[, c("PC6", "GM_NAAM")])
-dfpc6hn_gmnaam_sub <- subset(dfpc6hn_gmnaam_sub, GM_NAAM %in% GM_GGD_regio)
+# add gemeentenaam to pc4.
+dfpchn_gmnaam_pc4 <- dfpchn_gmnaam[, c("PC4", "GM_NAAM")]
+dfpchn_gmnaam_pc4 <- unique(dfpchn_gmnaam_pc4)
+pc4_sf_gmnaam <- merge(pc4_sf, dfpchn_gmnaam_pc4, by = "PC4", all.x = TRUE)
+pc4_sf <- subset(pc4_sf_gmnaam, GM_NAAM %in% GM_GGD_regio)
+pc4_geom <- pc4_sf$geometry
+pc4_sf$geometry <- NULL
+pc4_sf[pc4_sf == -99997] <- NA 
+st_geometry(pc4_sf) <- pc4_geom
 
 ## vaccinatie data inladen
 vac <- fread(file.path(path_data, paste0(vac_datum, "_vaccinaties.csv")))
@@ -141,17 +150,20 @@ vac_df <- vac_df[!duplicated(vac_df$bsn), ]
 
 # neem subset
 vac_df <- vac_df[ , c("postcode", "huisnummer")]
-names(vac_df) <- c("PC6", "Huisnummer")
+  names(vac_df) <- c("PC6", "Huisnummer")
 
 # verwijder incomplete cases
 vac_df <- vac_df[complete.cases(vac_df), ]
 
+
 # voeg bu-, wk-, wk, en pc6-code toe aan vaccinatie data
 buwkgm_vac_df <- merge(vac_df, dfpchn_gmnaam, by = c("PC6", "Huisnummer"), all.x = TRUE)
+# verwijder rijen met onjuiste postcodes
+buwkgm_vac_df <- buwkgm_vac_df[!is.na(buwkgm_vac_df$GM_CODE), ]
 
 # aggregeer naar gebied
 bu_vac <- aggregate(rep(1, nrow(buwkgm_vac_df)), by = list(buwkgm_vac_df$BU_CODE), sum)
-names(bu_vac) <- c("BU_CODE", "A_VAC")
+  names(bu_vac) <- c("BU_CODE", "A_VAC")
 
 wk_vac <- aggregate(rep(1, nrow(buwkgm_vac_df)), by = list(buwkgm_vac_df$WK_CODE), sum)
   names(wk_vac) <- c("WK_CODE", "A_VAC")
@@ -159,15 +171,17 @@ wk_vac <- aggregate(rep(1, nrow(buwkgm_vac_df)), by = list(buwkgm_vac_df$WK_CODE
 gm_vac <- aggregate(rep(1, nrow(buwkgm_vac_df)), by = list(buwkgm_vac_df$GM_CODE), sum)
   names(gm_vac) <- c("GM_CODE", "A_VAC")
   
-
+pc4_vac <- aggregate(rep(1, nrow(buwkgm_vac_df)), by = list(buwkgm_vac_df$PC4), sum)
+  names(pc4_vac) <- c("PC4", "A_VAC")
+  
 
 # laad HvB vaccinatie data ------------------------------------------------
 # onze VR is groter dan onze GGD regio. Vanuit GGD HvB ontvangen we 8 gemeenten
 # behorende bij onze VR.
 # laad HvB data
-bu_vac_hvb <- fread(file.path(path_data_hvb, "bu_HVB_MWB_Leonard_2021-06-29.csv"))
-wk_vac_hvb <- fread(file.path(path_data_hvb, "wk_HVB_MWB_Leonard_2021-06-29.csv"))
-gm_vac_hvb <- fread(file.path(path_data_hvb, "gm_HVB_MWB_Leonard_2021-06-29.csv"))
+bu_vac_hvb <- fread(file.path(path_data_hvb, "bu_HVB_MWB_Leonard_2021-07-06.csv"))
+wk_vac_hvb <- fread(file.path(path_data_hvb, "wk_HVB_MWB_Leonard_2021-07-06.csv"))
+gm_vac_hvb <- fread(file.path(path_data_hvb, "gm_HVB_MWB_Leonard_2021-07-06.csv"))
 
 # rbind vaccinatiedata ggd WB en ggd HvB
 bu_vac <- rbind(bu_vac, bu_vac_hvb)
@@ -176,32 +190,39 @@ gm_vac <- rbind(gm_vac, gm_vac_hvb)
 # -------------------------------------------------------------------------
 
 # add vaccinatiedata toe aan buurt, wijk en gemeente code
-bu_sf_vac <- merge(bu_sf, bu_vac, by = "BU_CODE", all.x = TRUE)
-wk_sf_vac <- merge(wk_sf, wk_vac, by = "WK_CODE", all.x = TRUE)
-gm_sf_vac <- merge(gm_sf, gm_vac, by = "GM_CODE", all.x = TRUE)
+bu_sf_vac  <- merge(bu_sf , bu_vac , by = "BU_CODE", all.x = TRUE)
+wk_sf_vac  <- merge(wk_sf , wk_vac , by = "WK_CODE", all.x = TRUE)
+gm_sf_vac  <- merge(gm_sf , gm_vac , by = "GM_CODE", all.x = TRUE)
+pc4_sf_vac <- merge(pc4_sf, pc4_vac, by = "PC4"    , all.x = TRUE)
 
 # transformeer crs (coordinaten reference systeem) naar epsg:4326
 # Dit is nodig om later de kaartjes te maken met leaflet(). 
-bu_sf_vac <- st_transform(bu_sf_vac, 4326)
-wk_sf_vac <- st_transform(wk_sf_vac, 4326)
-gm_sf_vac <- st_transform(gm_sf_vac, 4326)
+bu_sf_vac  <- st_transform(bu_sf_vac , 4326)
+wk_sf_vac  <- st_transform(wk_sf_vac , 4326)
+gm_sf_vac  <- st_transform(gm_sf_vac , 4326)
+pc4_sf_vac <- st_transform(pc4_sf_vac, 4326)
 
 # kerncijfers buurt, wijk, gemeente
 kwb_df <- fread(file.path(path_data, "kwb-2020.csv"))
-bu_sf_vac_kwb <- merge(bu_sf_vac, kwb_df, by.x = "BU_CODE", by.y = "gwb_code_8", all.x = TRUE)
-wk_sf_vac_kwb <- merge(wk_sf_vac, kwb_df, by.x = "WK_CODE", by.y = "gwb_code_8", all.x = TRUE)
-gm_sf_vac_kwb <- merge(gm_sf_vac, kwb_df, by.x = "GM_CODE", by.y = "gwb_code_8", all.x = TRUE)
-
+bu_sf_vac_kwb  <- merge(bu_sf_vac, kwb_df, by.x = "BU_CODE", by.y = "gwb_code_8", all.x = TRUE)
+wk_sf_vac_kwb  <- merge(wk_sf_vac, kwb_df, by.x = "WK_CODE", by.y = "gwb_code_8", all.x = TRUE)
+gm_sf_vac_kwb  <- merge(gm_sf_vac, kwb_df, by.x = "GM_CODE", by.y = "gwb_code_8", all.x = TRUE)
+pc4_sf_vac_kwb <- pc4_sf_vac
 
 # moerdijk en steenberger zitten er twee keer in, shapefile 2020
 #table(gm_sf_vac_kwb$GM_NAAM)
-gm_sf_vac_kwb <- gm_sf_vac_kwb[-c(14, 22), ]
-
+if (length(GM_GGD_regio) == 24) {
+  gm_sf_vac_kwb <- gm_sf_vac_kwb[-c(14, 22), ]
+  regio <- "VRMWB"
+} else if (length(GM_GGD_regio) == 16) {
+  gm_sf_vac_kwb <- gm_sf_vac_kwb[-c(8, 14), ]
+  regio <- "GGDWB"
+} else {
+  stop()
+}
 # bereken percentage gevaccineerden per bwg: we halen de 0-14 jarigen er eerst uit
 bu_sf_vac_kwb$a_inw_corrected <- bu_sf_vac_kwb$a_inw - bu_sf_vac_kwb$a_00_14
 wk_sf_vac_kwb$a_inw_corrected <- wk_sf_vac_kwb$a_inw - wk_sf_vac_kwb$a_00_14
-
-
 
 # corrigeer voor biezenmortel en haren ------------------------------------
 ## biezenmortel en Haren horen bij tilburg en Oisterwijk, respectievelijk
@@ -218,17 +239,21 @@ gm_sf_vac_kwb[gm_sf_vac_kwb$GM_NAAM == "Oisterwijk", ]$a_inw <-
   gm_sf_vac_kwb[gm_sf_vac_kwb$GM_NAAM == "Oisterwijk", ]$a_inw + a_inw_haaren
 # -------------------------------------------------------------------------
 
-gm_sf_vac_kwb$a_inw_corrected <- gm_sf_vac_kwb$a_inw - gm_sf_vac_kwb$a_00_14
+gm_sf_vac_kwb$a_inw_corrected  <- gm_sf_vac_kwb$a_inw - gm_sf_vac_kwb$a_00_14
+pc4_sf_vac_kwb$a_inw_corrected <- pc4_sf_vac_kwb$INWONER - pc4_sf_vac_kwb$INW_014
+
 
 # alle aantallen inwoners voor bu, wk, gm met 0 worden op NA gezet.
-bu_sf_vac_kwb$a_inw_corrected[bu_sf_vac_kwb$a_inw_corrected == 0] <- NA
-wk_sf_vac_kwb$a_inw_corrected[wk_sf_vac_kwb$a_inw_corrected == 0] <- NA
-gm_sf_vac_kwb$a_inw_corrected[gm_sf_vac_kwb$a_inw_corrected == 0] <- NA
+bu_sf_vac_kwb$a_inw_corrected[bu_sf_vac_kwb$a_inw_corrected == 0  ] <- NA
+wk_sf_vac_kwb$a_inw_corrected[wk_sf_vac_kwb$a_inw_corrected == 0  ] <- NA
+gm_sf_vac_kwb$a_inw_corrected[gm_sf_vac_kwb$a_inw_corrected == 0  ] <- NA
+pc4_sf_vac_kwb$a_inw_corrected[pc4_sf_vac_kwb$a_inw_corrected == 0] <- NA
 
 # subtract aantal 0-14 jarigen van totaal aantal inwoners
-bu_sf_vac_kwb$P_VAC <- bu_sf_vac_kwb$A_VAC / bu_sf_vac_kwb$a_inw_corrected * 100
-wk_sf_vac_kwb$P_VAC <- wk_sf_vac_kwb$A_VAC / wk_sf_vac_kwb$a_inw_corrected * 100
-gm_sf_vac_kwb$P_VAC <- gm_sf_vac_kwb$A_VAC / gm_sf_vac_kwb$a_inw_corrected * 100
+bu_sf_vac_kwb$P_VAC  <- bu_sf_vac_kwb$A_VAC  / bu_sf_vac_kwb$a_inw_corrected  * 100
+wk_sf_vac_kwb$P_VAC  <- wk_sf_vac_kwb$A_VAC  / wk_sf_vac_kwb$a_inw_corrected  * 100
+gm_sf_vac_kwb$P_VAC  <- gm_sf_vac_kwb$A_VAC  / gm_sf_vac_kwb$a_inw_corrected  * 100
+pc4_sf_vac_kwb$P_VAC <- pc4_sf_vac_kwb$A_VAC / pc4_sf_vac_kwb$a_inw_corrected * 100
 
 # leeftijdspercentages bwg 
 bu_sf_vac_kwb$P_65PL  <- bu_sf_vac_kwb$a_65_oo / bu_sf_vac_kwb$a_inw * 100
@@ -246,6 +271,60 @@ gm_sf_vac_kwb$P_4564  <- gm_sf_vac_kwb$a_45_64 / gm_sf_vac_kwb$a_inw * 100
 gm_sf_vac_kwb$P_2544  <- gm_sf_vac_kwb$a_25_44 / gm_sf_vac_kwb$a_inw * 100
 gm_sf_vac_kwb$P_1524  <- gm_sf_vac_kwb$a_15_24 / gm_sf_vac_kwb$a_inw * 100
 
+pc4_sf_vac_kwb$P_65PL  <- pc4_sf_vac_kwb$INW_65PL / pc4_sf_vac_kwb$INWONER * 100
+pc4_sf_vac_kwb$P_4564  <- pc4_sf_vac_kwb$INW_4564 / pc4_sf_vac_kwb$INWONER * 100
+pc4_sf_vac_kwb$P_2544  <- pc4_sf_vac_kwb$INW_2544 / pc4_sf_vac_kwb$INWONER * 100
+pc4_sf_vac_kwb$P_1524  <- pc4_sf_vac_kwb$INW_1524 / pc4_sf_vac_kwb$INWONER * 100
+
+
+# CIMS data ---------------------------------------------------------------
+# data WB
+cims_wb  <- fread(file.path(path_data, "Tabel_vaccinatiegraad_wijk_leeftijdgroep_GGD_West_Brabant_20210705_1045.csv"))
+# data HvB
+cims_hvb <- fread(file.path(path_data_hvb, "20210705_CIMS_HvB_MWB.csv"))
+# combineer 
+cims_df <- rbind(cims_wb, cims_hvb)
+# selecteer variabelen 
+cims_df <- cims_df[, c("Wijk_code", "Leeftijdsgroep", "Vaccinatiegraad vaccinatie gestart (cat)")]
+# rename var.
+names(cims_df) <- c("WK_CODE", "leeftijdscat.", "vaccinatiegraad")
+# filter op totalen per wijk
+cims_df_tot <- subset(cims_df, leeftijdscat. == "Totaal")
+# wijkcode to number
+cims_df_tot$WK_CODE <- to_number(cims_df_tot$WK_CODE)
+
+# hernoem factor levels
+cims_df_tot$vaccinatiegraad <- as.factor(cims_df_tot$vaccinatiegraad)
+levels(cims_df_tot$vaccinatiegraad)[levels(cims_df_tot$vaccinatiegraad) == "? 80%"    ] <- "80"
+levels(cims_df_tot$vaccinatiegraad)[levels(cims_df_tot$vaccinatiegraad) == "70% - 79%"] <- "70"
+levels(cims_df_tot$vaccinatiegraad)[levels(cims_df_tot$vaccinatiegraad) == "60% - 69%"] <- "60"
+levels(cims_df_tot$vaccinatiegraad)[levels(cims_df_tot$vaccinatiegraad) == "50% - 59%"] <- "50"
+levels(cims_df_tot$vaccinatiegraad)[levels(cims_df_tot$vaccinatiegraad) == "40% - 49%"] <- "40"
+levels(cims_df_tot$vaccinatiegraad)[levels(cims_df_tot$vaccinatiegraad) == "30% - 39%"] <- "30"
+levels(cims_df_tot$vaccinatiegraad)[levels(cims_df_tot$vaccinatiegraad) == "20% - 29%"] <- "20"
+levels(cims_df_tot$vaccinatiegraad)[levels(cims_df_tot$vaccinatiegraad) == "0% - 19%"]  <- "10"
+
+# maak er een numerieke variabele van
+cims_df_tot$vaccinatiegraad <- as.numeric(as.character(cims_df_tot$vaccinatiegraad))
+
+# merge met wijk data
+wk_sf_vac_kwb <- merge(wk_sf_vac_kwb, cims_df_tot, by = "WK_CODE", all.x = TRUE)
+
+# hoeveel cims wijken hebben een hogere score dan de ggd wijken
+#sum(ifelse(wk_sf_vac_kwb$vaccinatiegraad > wk_sf_vac_kwb$P_VAC, 1, 0), na.rm = TRUE)
+
+# welke wijken score hoger obv cims data
+cims.idx <- which(wk_sf_vac_kwb$vaccinatiegraad > wk_sf_vac_kwb$P_VAC)
+#wk_sf_vac_kwb[cims.idx, ]
+
+# vervang vaccinatie percentage als het cims percentage hoger is dan het ggd percentage
+wk_sf_vac_kwb$P_VAC[cims.idx] <- wk_sf_vac_kwb$vaccinatiegraad[cims.idx]
+
+# zet het aantal gevaccineerd door de ggd op NA
+wk_sf_vac_kwb$A_VAC[cims.idx] <- NA
+
+# -------------------------------------------------------------------------
+
 
 # grandmean percentage gevaccineerden veiligheidsregio mwb, zonder 0-14 jarigen
 grandMean <- sum(gm_sf_vac_kwb$A_VAC) / sum(gm_sf_vac_kwb$a_inw - gm_sf_vac_kwb$a_00_14) * 100
@@ -259,14 +338,10 @@ grandMean <- sum(gm_sf_vac_kwb$A_VAC) / sum(gm_sf_vac_kwb$a_inw - gm_sf_vac_kwb$
 # grandMean_65PL <- sum(gm_sf_vac_kwb$A_VAC) / sum(gm_sf_vac_kwb$a_65_oo) * 100
 
 
-bu_sf_vac_kwb$diffLM     <- -1 * round((grandMean - bu_sf_vac_kwb$P_VAC), 2)
-#bu_sf_vac_kwb$diffLM_inv <- -1 * bu_sf_vac_kwb$diffLM
-
-wk_sf_vac_kwb$diffLM     <- -1 * round((grandMean - wk_sf_vac_kwb$P_VAC), 2)
-#wk_sf_vac_kwb$diffLM_inv <- -1 * wk_sf_vac_kwb$diffLM
-
-gm_sf_vac_kwb$diffLM     <- -1 * round((grandMean - gm_sf_vac_kwb$P_VAC), 2)
-#gm_sf_vac_kwb$diffLM_inv <- -1 * gm_sf_vac_kwb$diffLM
+bu_sf_vac_kwb$diffLM  <- -1 * round((grandMean - bu_sf_vac_kwb$P_VAC) , 2)
+wk_sf_vac_kwb$diffLM  <- -1 * round((grandMean - wk_sf_vac_kwb$P_VAC) , 2)
+gm_sf_vac_kwb$diffLM  <- -1 * round((grandMean - gm_sf_vac_kwb$P_VAC) , 2)
+pc4_sf_vac_kwb$diffLM <- -1 * round((grandMean - pc4_sf_vac_kwb$P_VAC), 2)
 
 
 
@@ -325,33 +400,32 @@ AZC$lat <- as.numeric(AZC$lat)
 bu_sf_vac_kwb$Id  <- 1:nrow(bu_sf_vac_kwb)
 wk_sf_vac_kwb$Id  <- 1:nrow(wk_sf_vac_kwb)
 gm_sf_vac_kwb$Id  <- 1:nrow(gm_sf_vac_kwb)
+pc4_sf_vac_kwb$Id <- 1:nrow(pc4_sf_vac_kwb)
 
 quant <- qnorm(c(.025, .05, .25, .50, .75, .95, .975))
 
-bu_sf_vac_kwb$bu_z <- (bu_sf_vac_kwb$diffLM) / 
-  sd(bu_sf_vac_kwb$diffLM, na.rm = TRUE)
-bu_sf_vac_kwb$bins <- cut(bu_sf_vac_kwb$bu_z, breaks = c(-Inf, quant, Inf), 
-                          include.lowest = TRUE, right = TRUE,
-                          labels = 1:8)
+bu_sf_vac_kwb$z <- (bu_sf_vac_kwb$diffLM) / sd(bu_sf_vac_kwb$diffLM, na.rm = TRUE)
+bu_sf_vac_kwb$bins <- cut(bu_sf_vac_kwb$z, breaks = c(-Inf, quant, Inf), 
+                          include.lowest = TRUE, right = TRUE, labels = 1:8)
 
-wk_sf_vac_kwb$wk_z <- (wk_sf_vac_kwb$diffLM) / 
-  sd(wk_sf_vac_kwb$diffLM, na.rm = TRUE)
-wk_q <- qnorm(c(.025, .05, .25, .50, .75, .95, .975))
-wk_sf_vac_kwb$bins <- cut(wk_sf_vac_kwb$wk_z, breaks = c(-Inf, quant, Inf), 
-                          include.lowest = TRUE, right = TRUE,
-                          labels = 1:8)
+wk_sf_vac_kwb$z <- (wk_sf_vac_kwb$diffLM) / sd(wk_sf_vac_kwb$diffLM, na.rm = TRUE)
+wk_sf_vac_kwb$bins <- cut(wk_sf_vac_kwb$z, breaks = c(-Inf, quant, Inf), 
+                          include.lowest = TRUE, right = TRUE, labels = 1:8)
 
-gm_sf_vac_kwb$gm_z <- (gm_sf_vac_kwb$diffLM) / 
+gm_sf_vac_kwb$z <- (gm_sf_vac_kwb$diffLM) / 
   sd(gm_sf_vac_kwb$diffLM, na.rm = TRUE)
-gm_q <- qnorm(c(.025, .05, .25, .50, .75, .95, .975))
-gm_sf_vac_kwb$bins <- cut(gm_sf_vac_kwb$gm_z, breaks = c(-Inf, quant, Inf), 
-                          include.lowest = TRUE, right = TRUE,
-                          labels = 1:8)
+gm_sf_vac_kwb$bins <- cut(gm_sf_vac_kwb$z, breaks = c(-Inf, quant, Inf), 
+                          include.lowest = TRUE, right = TRUE, labels = 1:8)
+
+pc4_sf_vac_kwb$z <- (pc4_sf_vac_kwb$diffLM) / 
+  sd(pc4_sf_vac_kwb$diffLM, na.rm = TRUE)
+pc4_sf_vac_kwb$bins <- cut(pc4_sf_vac_kwb$z, breaks = c(-Inf, quant, Inf), 
+                           include.lowest = TRUE, right = TRUE, labels = 1:8)
 
 
 colorPal <- c(rev(brewer.pal(8, "Reds")[3:6]), brewer.pal(8, "Greens")[5:8])
 pal <- colorNumeric(colorPal, na.color = "#FFFFFF", domain = 1:8)
-#show_col(pal(1:8))
+scales::show_col(pal(1:8))
 #show_col(colorPal)
 
 
@@ -380,12 +454,17 @@ gm_sf_vac_kwb$P_2544[gm_sf_vac_kwb$P_2544 == 0] <- NA
 gm_sf_vac_kwb$P_4564[gm_sf_vac_kwb$P_4564 == 0] <- NA
 gm_sf_vac_kwb$P_65PL[gm_sf_vac_kwb$P_65PL == 0] <- NA
 
+pc4_sf_vac_kwb$P_1524[pc4_sf_vac_kwb$P_1524 == 0] <- NA
+pc4_sf_vac_kwb$P_2544[pc4_sf_vac_kwb$P_2544 == 0] <- NA
+pc4_sf_vac_kwb$P_4564[pc4_sf_vac_kwb$P_4564 == 0] <- NA
+pc4_sf_vac_kwb$P_65PL[pc4_sf_vac_kwb$P_65PL == 0] <- NA
+
 
 ## maak labels
 labels_bu <-
   paste(sprintf("<h3><b>%s</b></h5>", bu_sf_vac_kwb$BU_NAAM),
         sprintf("<h4>Percentage gevaccineerd door/afspraak gepland bij GGD: %s</h6>", sprintf("%.1f", bu_sf_vac_kwb$P_VAC)),
-        sprintf("<h4>Gemiddeld percentage gevaccineerd VRMWB: %s</h6>"              , sprintf("%.1f", grandMean)),
+        sprintf("<h4>Gemiddeld percentage gevaccineerd %s: %s</h6>"                 , regio, sprintf("%.1f", grandMean)),
         sprintf("<h4>Aantal inwoners 15+: %s</h6>"                                  , sprintf("%s"  , bu_sf_vac_kwb$a_inw_corrected)),
         sprintf("<h4>Aantal gevaccineerd door/afspraak gepland bij GGD: %s</h6>"    , sprintf("%s"  , bu_sf_vac_kwb$A_VAC)),
         sprintf("<h5>Percentage inwoners 15-24 jarigen: %s</h6>"                    , sprintf("%.1f", bu_sf_vac_kwb$P_1524)),
@@ -398,7 +477,7 @@ labels_bu <-
 labels_wk <-
   paste(sprintf("<h3><b>%s</b></h5>", wk_sf_vac_kwb$WK_NAAM),
         sprintf("<h4>Percentage gevaccineerd door/afspraak gepland bij GGD: %s</h6>", sprintf("%.1f", wk_sf_vac_kwb$P_VAC)),
-        sprintf("<h4>Gemiddeld percentage gevaccineerd VRMWB: %s</h6>"               , sprintf("%.1f", grandMean)),
+        sprintf("<h4>Gemiddeld percentage gevaccineerd %s: %s</h6>"                 , regio, sprintf("%.1f", grandMean)),
         sprintf("<h4>Aantal inwoners 15+: %s</h6>"                                   , sprintf("%s"  , wk_sf_vac_kwb$a_inw_corrected)),
         sprintf("<h4>Aantal gevaccineerd door/afspraak gepland bij GGD: %s</h6>"     , sprintf("%s"  , wk_sf_vac_kwb$A_VAC)),
         sprintf("<h5>Percentage inwoners 15-24 jarigen: %s</h6>"                     , sprintf("%.1f", wk_sf_vac_kwb$P_1524)),
@@ -411,13 +490,26 @@ labels_wk <-
 labels_gm <-
   paste(sprintf("<h3><b>%s</b></h5>", gm_sf_vac_kwb$GM_NAAM),
         sprintf("<h4>Percentage gevaccineerd door/afspraak gepland bij GGD: %s</h6>", sprintf("%.1f", gm_sf_vac_kwb$P_VAC)),
-        sprintf("<h4>Gemiddeld percentage gevaccineerd VRMWB: %s</h6>"              , sprintf("%.1f", grandMean)),
+        sprintf("<h4>Gemiddeld percentage gevaccineerd %s: %s</h6>"                 , regio, sprintf("%.1f", grandMean)),
         sprintf("<h4>Aantal inwoners 15+: %s</h6>"                                  , sprintf("%s"  , gm_sf_vac_kwb$a_inw_corrected)),
         sprintf("<h4>Aantal gevaccineerd door/afspraak gepland bij GGD: %s</h6>"    , sprintf("%s"  , gm_sf_vac_kwb$A_VAC)),
         sprintf("<h5>Percentage inwoners 15-24 jarigen: %s</h6>"                    , sprintf("%.1f", gm_sf_vac_kwb$P_1524)),
         sprintf("<h5>Percentage inwoners 25-44 jarigen: %s</h6>"                    , sprintf("%.1f", gm_sf_vac_kwb$P_2544)),
         sprintf("<h5>Percentage inwoners 45-64 jarigen: %s</h6>"                    , sprintf("%.1f", gm_sf_vac_kwb$P_4564)),
         sprintf("<h5>Percentage inwoners 65+: %s</h6>"                              , sprintf("%.1f", gm_sf_vac_kwb$P_65PL))
+  ) %>%
+  lapply(htmltools::HTML)
+
+labels_pc4 <-
+  paste(sprintf("<h3><b>%s</b></h5>", pc4_sf_vac_kwb$PC4),
+        sprintf("<h4>Percentage gevaccineerd door/afspraak gepland bij GGD: %s</h6>", sprintf("%.1f", pc4_sf_vac_kwb$P_VAC)),
+        sprintf("<h4>Gemiddeld percentage gevaccineerd %s: %s</h6>"                 , regio, sprintf("%.1f", grandMean)),
+        sprintf("<h4>Aantal inwoners 15+: %s</h6>"                                  , sprintf("%s"  , pc4_sf_vac_kwb$a_inw_corrected)),
+        sprintf("<h4>Aantal gevaccineerd door/afspraak gepland bij GGD: %s</h6>"    , sprintf("%s"  , pc4_sf_vac_kwb$A_VAC)),
+        sprintf("<h5>Percentage inwoners 15-24 jarigen: %s</h6>"                    , sprintf("%.1f", pc4_sf_vac_kwb$P_1524)),
+        sprintf("<h5>Percentage inwoners 25-44 jarigen: %s</h6>"                    , sprintf("%.1f", pc4_sf_vac_kwb$P_2544)),
+        sprintf("<h5>Percentage inwoners 45-64 jarigen: %s</h6>"                    , sprintf("%.1f", pc4_sf_vac_kwb$P_4564)),
+        sprintf("<h5>Percentage inwoners 65+: %s</h6>"                              , sprintf("%.1f", pc4_sf_vac_kwb$P_65PL))
   ) %>%
   lapply(htmltools::HTML)
 
@@ -430,6 +522,18 @@ kaart <- leaflet() %>%
   setView(lng = centroid[[1]][1], lat = centroid[[1]][2], zoom = 10) %>% 
   addMapPane(name = "ames_polygons", zIndex = 200) %>% 
   addTiles() %>%
+  # addPolygons(data        = pc4_sf_vac_kwb,
+  #             color       = "black",
+  #             fillColor   = ~pal(as.numeric(pc4_sf_vac_kwb$bins)),
+  #             opacity     = 1,
+  #             weight      = 1,
+  #             fillOpacity = 0.5,
+  #             layerId     = pc4_sf_vac_kwb$Id,
+  #             group       = "PC4",
+  #             popup       = labels_pc4,
+  #             highlightOptions = highlightOptions(color = "black", weight = 3,
+  #                                                 bringToFront = TRUE),
+  #             options = pathOptions(pane = "ames_polygons")) %>%
   addPolygons(data        = bu_sf_vac_kwb,
               color       = "black",
               fillColor   = ~pal(as.numeric(bu_sf_vac_kwb$bins)),
@@ -454,8 +558,8 @@ kaart <- leaflet() %>%
               highlightOptions = highlightOptions(color = "black", weight = 3,
                                                   bringToFront = TRUE),
               options = pathOptions(pane = "ames_polygons")) %>%
-  addPolygons(data        = gm_sf_vac_kwb, 
-              color       = "black", 
+  addPolygons(data        = gm_sf_vac_kwb,
+              color       = "black",
               fillColor   = ~pal(as.numeric(gm_sf_vac_kwb$bins)),
               opacity     = 1,
               weight      = 1,
@@ -466,7 +570,6 @@ kaart <- leaflet() %>%
               highlightOptions = highlightOptions(color = "black", weight = 3,
                                                   bringToFront = TRUE),
               options = pathOptions(pane = "ames_polygons")) %>%
-  
   addMarkers(data = BAG, group = "Gezondheidsinstelling met woonfunctie",
              clusterOptions = markerClusterOptions()) %>%
   addMarkers(lat = AZC$lat, lng = AZC$lon, group = "AZC") %>%
